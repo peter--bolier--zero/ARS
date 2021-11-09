@@ -48,8 +48,14 @@ class Normalizer:
         self.mean += (x - mean_last_cycle) / self.n
         # online computation of variance
         self.mean_diff += (x - mean_last_cycle) * (x - self.mean)
-        self.var += self.mean_diff / self.n
-        
+        # clip variance to prevent div by 0 later
+        self.var += (self.mean_diff / self.n).clip(min=1e-2)
+
+    # So now normalize the input, what we 'see' of our environment
+    def normalize(self, inputs):
+        observed_mean = self.mean
+        observed_std  = np.sqrt(self.var)
+        return (inputs - observed_mean) / observed_std
         
 
 
