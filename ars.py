@@ -15,7 +15,7 @@ class HyperParameters:
         # a step_size from paper not yet used?
         self.number_of_steps = 1024         # Number of time we're updating the model in one total run
         self.episode_lenght = 1200          # Maximum time AI is going to wlak 
-        self.learning_rate = 0.02           # how fast is AI to learn (adapt)
+        self.learning_rate = 0.02           # how fast is AI to learn (adapt) alfa
         self.number_of_directions = 20      # N or pertubations
         self.number_of_best_directions = 16 # b The best, or the top
         self.noise = 0.03                   # v
@@ -93,3 +93,17 @@ class Policy():
         # for all directions we need a matrix
         return [np.random.randn(*self.theta.shape) for i in range(self.hp.number_of_directions)]
         
+    # 7 update step, kind of gradient descent (approximate by measuring difference between rewards)
+    # Goal to increase the reward
+    # see https://en.wikipedia.org/wiki/Finite_difference
+    # episode or a rollout is list of (reward pos, reward neg, pertubation (d) of the direction)
+    def update(self, rollouts, sigma_reward):
+        # sum over best directions
+        step = np.zeros(self.theta.shape) # unfortunetaly expects diff format
+        for reward_pos, reward_neg, d in rollouts:
+            step += (reward_pos - reward_neg) * d
+        self.theta += self.hp.learning_rate / (self.hp.number_of_best_directions * sigma_reward) * step
+            
+    # exploration / step 6 ?
+    
+    
