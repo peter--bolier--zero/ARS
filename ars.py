@@ -6,6 +6,7 @@
 # Description on page 6 / section 3
 # Algorithm targeted at version 2, with normalized states and rewards
 
+from enum import Enum
 import numpy as np
 
 # To maintain the hyperparameter set
@@ -24,7 +25,8 @@ class HyperParameters:
         # Some validation rules on hyperparameters configuration
         # Paper status b < N
         assert self.number_of_best_directions <= self.number_of_directions
-        
+
+
 # Normalizing the states, section 3.2 so all states are in same range, like 0..1
 # State is vector containing all input, what's happening in our environment
 # note we need to to this in real time, so for each step...
@@ -57,9 +59,37 @@ class Normalizer:
         observed_std  = np.sqrt(self.var)
         return (inputs - observed_mean) / observed_std
         
-
+# todo perhaps use enum
+class Direction(Enum):
+    negative = -1
+    none = 0
+    positive = 1
 
 
 # Policy is function of our perceptron translating input into action(s)
+# With ARS we explore multiple policies, or policy space
+class Policy():
+    def __init__(self, number_of_inputs, number_of_outputs, hyper_parameters):
+        # matrix of weights theta row, columns (see paper), M
+        self.hp = hyper_parameters
+        self.theta = np.zeros((number_of_outputs, number_of_inputs))
+        
+    # Step 5 / V2
+    # Create policy space - delta = pertubations pos/neg, noise is normal distribution
+    def evaluate(self, input, delta = None, direction = None):
+        # or split up in several methods ?
+        if direction is None:
+            # just matrix * vector
+            return self.theta.dot(input)
+        elif direction == 'positive':
+            # should we use a global variable ?
+            return (self.theta + self.hp.noise * delta).dot(input)
+        else:
+            return (self.theta - self.hp.noise * delta).dot(input)
 
+    # get delta weight as matrix (like theta) distributed normaly (randn) for each direction 
+    def sample_deltas(self):
+        # * to get all dimensions of matrix
+        # for all directions we need a matrix
+        return [np.random.randn(*self.theta.shape) for i in range(self.hp.number_of_directions)]
         
