@@ -59,6 +59,10 @@ class Normalizer:
         observed_std  = np.sqrt(self.var)
         return (inputs - observed_mean) / observed_std
         
+    def observe_normalized(self, state):
+        self.observe(state)
+        return self.normalize(state)
+    
 # todo perhaps use enum
 class Direction(Enum):
     negative = -1
@@ -104,6 +108,37 @@ class Policy():
             step += (reward_pos - reward_neg) * d
         self.theta += self.hp.learning_rate / (self.hp.number_of_best_directions * sigma_reward) * step
             
-    # exploration / step 6 ?
+# exploration / step 6 ?
+# we need to explore the policy space 
+# either time / length, goal or fail is achieved
+# First a helper function for one exploration
+
+# Explore one policy on one spcific direction and for one full episode
+def Explore(environment, normalizer, policy, hyper_parameters, direction = None, delta = None):
+    # start fresh
+    observation = environment.reset() # from pybullet https://pybullet.org/
+    done = False
+    number_actions_played = 0.0
+    sum_rewards = 0.0 # or another relevant measure
     
+    # Let explore the policy with given direction etc.
+    while not done and number_actions_played < hyper_parameters.episode_length:
+        # proces one step / feed input into perceptron
+        observation = normalizer.observe_normalized(observation) # state aka inputs aka observation
+        action = policy.evaluate(observation, delta, direction)
+        observation, reward, done, _ = environment.step(action) # not using info
+        # carefull with outliers of rewards limit range to -1..+1
+        reward = max( min(reward, 1), -1)
+        
+        sum_rewards += reward
+        number_actions_played += 1
+    return sum_rewards
+
+
+# Training of the AI, or explore the policy space
+def train(environment, policy, normalizer, hyperparameters):
+    for step in range(0, hyperparameters.number_of_steps):
+        # Set up the space to explore, like deltas
+        
+
     
