@@ -7,20 +7,25 @@
 # Algorithm targeted at version 2, with normalized states and rewards
 
 from enum import Enum
+import gym
+from gym import wrappers
 import numpy as np
+import os
+import pybullet_envs
+
 
 # To maintain the hyperparameter set
 class HyperParameters:
     def __init__(self):
         # a step_size from paper not yet used?
         self.number_of_steps = 1024         # Number of time we're updating the model in one total run
-        self.episode_lenght = 1200          # Maximum time AI is going to wlak 
+        self.episode_length = 1200          # Maximum time AI is going to walk 
         self.learning_rate = 0.02           # how fast is AI to learn (adapt) alfa
         self.number_of_directions = 20      # N or pertubations
         self.number_of_best_directions = 16 # b The best, or the top
         self.noise = 0.03                   # v
         self.seed = 1                       # Basically seed for random numer to be used in environemnt
-        self.environment_name = ''          # Name of the environment
+        self.environment_name = 'HalfCheetahBulletEnv-v0'          # Name of the environment
         
         # Some validation rules on hyperparameters configuration
         # Paper status b < N
@@ -51,7 +56,7 @@ class Normalizer:
         # online computation of variance
         self.mean_diff += (x - mean_last_cycle) * (x - self.mean)
         # clip variance to prevent div by 0 later
-        self.var += (self.mean_diff / self.n).clip(min=1e-2)
+        self.var = (self.mean_diff / self.n).clip(min=1e-2)
 
     # So now normalize the input, what we 'see' of our environment
     def normalize(self, inputs):
@@ -114,7 +119,7 @@ class Policy():
 # First a helper function for one exploration
 
 # Explore one policy on one spcific direction and for one full episode
-def Explore(environment, normalizer, policy, hyper_parameters, direction = None, delta = None):
+def explore(environment, normalizer, policy, hyper_parameters, direction = None, delta = None):
     # start fresh
     observation = environment.reset() # from pybullet https://pybullet.org/
     done = False
@@ -136,9 +141,71 @@ def Explore(environment, normalizer, policy, hyper_parameters, direction = None,
 
 
 # Training of the AI, or explore the policy space
-def train(environment, policy, normalizer, hyperparameters):
-    for step in range(0, hyperparameters.number_of_steps):
+def train(environment, policy, normalizer, hyper_parameters):
+    
+    for step in range(0, hyper_parameters.number_of_steps):
         # Set up the space to explore, like deltas
+        # so pertubation deltas and positive and negaive rewards
+        deltas = policy.sample_deltas()
+        positive_pertubation_rewards = [0] * hyper_parameters.number_of_directions
+        negative_pertubation_rewards = [0] * hyper_parameters.number_of_directions
+        
+        # explore the space
+        # getting the positive rewards in the positive direction
+        for d in range(0, hyper_parameters.number_of_directions):
+            positive_pertubation_rewards[d] = explore(environment, normalizer, policy, hyper_parameters, direction = 'positive', delta = deltas[d])
+
+        # getting the positive rewards in the positive direction
+        for d in range(0, hyper_parameters.number_of_directions):
+            negative_pertubation_rewards[d] = explore(environment, normalizer, policy, hyper_parameters, direction = 'negative', delta = deltas[d])
+        
+        # scale / normalize
+        # get all rewards in one list so we can get the statistics
+        all_rewards = np.array(positive_pertubation_rewards + negative_pertubation_rewards)
+        sigma_r = all_rewards.std()
+        
+        # sort (the rollouts) by maximum and select the best (directions), modding into dictionary
+        max_rewards = { k:max(r_pos, r_neg)  for k,(r_pos, r_neg) in enumerate(zip(positive_pertubation_rewards, negative_pertubation_rewards)) }
+        best_rewards_key_sorted = sorted(max_rewards.keys(), key = lambda x : max_rewards[x])[0:hyper_parameters.number_of_best_directions] # slice the top
+       
+        # get rewards using the keys
+        rollouts = [(positive_pertubation_rewards[k], negative_pertubation_rewards[k], deltas[k]) for k in best_rewards_key_sorted]
+        
+        # time to do one step (phew) - update policy (weigths)
+        policy.update(rollouts, sigma_r)
+        
+        # report best stuff
+        reward_evaluation = explore(environment, normalizer, policy, hyper_parameters) # no direction or delta
+        print('Step: {} Reward {} '.format(step, reward_evaluation ))
         
 
+# helpers
+# define path and create it if it doesn not yet exist
+def mkdir(base, name):
+    path = os.path.join(base, name)
+    if not os.path.exists(path):
+        os.makedirs(path)
+    return path
+
+
+if __name__ == '__main__':
+    print('Lets get started - Set up')
     
+    work_dir = mkdir('exp', 'brs')
+    monitor_dir = mkdir(work_dir, 'monitor')    
+    
+    hyper_parameters = HyperParameters()
+    np.random.seed(hyper_parameters.seed) # (optional) seed so we can compare runs - testing
+    
+    # easiest way to use pybullet thorugh gym
+    environment_gym = gym.make(hyper_parameters.environment_name)
+    environment_gym = wrappers.Monitor(environment_gym, monitor_dir, force = True) # ignore errors
+    
+    number_of_inputs = environment_gym.observation_space.shape[0] # Todo check gym doc
+    number_of_outputs = environment_gym.action_space.shape[0]
+    
+    policy = Policy(number_of_inputs, number_of_outputs, hyper_parameters)
+    normalizer = Normalizer(number_of_inputs)
+    
+    print('Lets get started - Train')
+    train(environment_gym, policy, normalizer ,hyper_parameters)
